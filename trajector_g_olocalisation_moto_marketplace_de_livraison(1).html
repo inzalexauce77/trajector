@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="fr" class="h-full bg-slate-50">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trajector - Géolocalisation Moto & Marketplace de Livraison</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+    <!-- Leaflet CSS & JS for Interactive Map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <style>
+        /* Custom map styling & pulse animations */
+        .leaflet-container {
+            width: 100%;
+            height: 100%;
+            border-radius: 0.75rem;
+            z-index: 10;
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            50% { transform: scale(1.3); opacity: 0.2; }
+            100% { transform: scale(0.95); opacity: 0.8; }
+        }
+        .pulse-marker {
+            animation: pulse-ring 2s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="h-full text-slate-800 flex flex-col font-sans antialiased select-none">
+
+    <!-- Top Navigation Bar (Switcher between user personas) -->
+    <header class="bg-slate-900 text-white shadow-md sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <!-- Brand Logo & Tag -->
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-emerald-500 flex items-center justify-center font-black text-xl text-white shadow-lg shadow-emerald-950/40">
+                        🛵
+                    </div>
+                    <div>
+                        <div class="font-extrabold text-lg tracking-tight flex items-center gap-2">
+                            <span>Trajector</span>
+                            <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Abidjan</span>
+                        </div>
+                        <p class="text-[11px] text-slate-400">Géoloc Moto & Marque Blanche</p>
+                    </div>
+                </div>
+
+                <!-- Persona View Switcher -->
+                <nav class="flex space-x-1 sm:space-x-2 bg-slate-800/80 p-1.5 rounded-xl border border-slate-700/60 overflow-x-auto text-xs sm:text-sm font-medium">
+                    <button id="tab-btn-driver" class="tab-btn px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 bg-emerald-600 text-white shadow-sm">
+                        <span>📱</span>
+                        <span class="whitespace-nowrap">App Livreur (500 F/j)</span>
+                    </button>
+                    <button id="tab-btn-client" class="tab-btn px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 text-slate-300 hover:text-white hover:bg-slate-700">
+                        <span>📍</span>
+                        <span class="whitespace-nowrap">Suivi Client Direct</span>
+                    </button>
+                    <button id="tab-btn-storefront" class="tab-btn px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 text-slate-300 hover:text-white hover:bg-slate-700">
+                        <span>🌐</span>
+                        <span class="whitespace-nowrap">Vitrine Marque Blanche</span>
+                    </button>
+                    <button id="tab-btn-marketplace" class="tab-btn px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 text-slate-300 hover:text-white hover:bg-slate-700">
+                        <span>📦</span>
+                        <span class="whitespace-nowrap">Marketplace Colis</span>
+                    </button>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+
+        <!-- ============================================================== -->
+        <!-- VIEW 1: APPLICATION LIVREUR (SMARTPHONE VIEW)                   -->
+        <!-- ============================================================== -->
+        <section id="view-driver" class="persona-view max-w-md mx-auto space-y-4">
+            <!-- Smartphone Shell Header -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5">
+                <div class="flex items-center justify-between pb-4 border-b border-slate-100">
+                    <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 rounded-full bg-slate-100 border-2 border-emerald-500 overflow-hidden flex items-center justify-center text-xl font-bold text-slate-700">
+                            👨🏾‍💼
+                        </div>
+                        <div>
+                            <h2 class="font-bold text-slate-900 leading-tight">Amadou Kouassi</h2>
+                            <p class="text-xs text-slate-500">Haojue 110 • Plaque: <strong>2456 JJ 01</strong></p>
+                            <span class="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full mt-1">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Livreur Vérifié
+                            </span>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <span class="text-[11px] uppercase tracking-wider font-bold text-slate-400">Solde Portefeuille</span>
+                        <div id="driver-wallet" class="text-lg font-black text-slate-800">4 500 F</div>
+                    </div>
+                </div>
+
+                <!-- Daily Subscription Box (500 FCFA / Day) -->
+                <div class="mt-4 p-4 rounded-xl border transition-all" id="sub-card-box">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <span class="text-lg">⚡</span>
+                            <div>
+                                <h3 class="font-bold text-sm text-slate-900">Pass Journalier (500 FCFA)</h3>
+                                <p id="sub-status-desc" class="text-xs text-slate-500">Valide jusqu'à 23h59</p>
+                            </div>
+                        </div>
+                        <span id="sub-badge" class="px-2.5 py-1 text-xs font-bold rounded-full bg-emerald-100 text-emerald-800">
+                            ACTIF
+                        </span>
+                    </div>
+
+                    <div class="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                        <button id="btn-toggle-sub" class="text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors">
+                            Simuler expiration
+                        </button>
+                        <button id="btn-pay-sub" class="text-xs font-bold px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm flex items-center gap-1 transition-colors">
+                            <span>💳</span> Payer 500 F (Wave / MoMo)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Live GPS Tracking Switch -->
+                <div class="mt-4 p-4 bg-slate-900 text-white rounded-xl space-y-3">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <div id="gps-pulse-indicator" class="w-3 h-3 rounded-full bg-emerald-500 animate-ping"></div>
+                            <span class="text-xs font-bold uppercase tracking-wider text-slate-300">Émission GPS en direct</span>
+                        </div>
+                        <button id="btn-toggle-gps" class="text-xs font-bold px-3 py-1 rounded-full bg-emerald-500 text-slate-950 hover:bg-emerald-400 transition-colors">
+                            EN LIGNE
+                        </button>
+                    </div>
+
+                    <!-- Live Telemetry -->
+                    <div class="grid grid-cols-3 gap-2 pt-2 border-t border-slate-800 text-center">
+                        <div class="bg-slate-800/80 p-2 rounded-lg">
+                            <div class="text-[10px] text-slate-400">Vitesse</div>
+                            <div id="telemetry-speed" class="font-bold text-sm text-emerald-400">38 km/h</div>
+                        </div>
+                        <div class="bg-slate-800/80 p-2 rounded-lg">
+                            <div class="text-[10px] text-slate-400">Batterie</div>
+                            <div class="font-bold text-sm text-slate-200">84% ⚡</div>
+                        </div>
+                        <div class="bg-slate-800/80 p-2 rounded-lg">
+                            <div class="text-[10px] text-slate-400">Précision</div>
+                            <div class="font-bold text-sm text-slate-200">4 mètres</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Instant Share Link Actions -->
+                <div class="mt-4 space-y-2">
+                    <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider">
+                        Partager ma position avec un client
+                    </label>
+                    <div class="flex items-center gap-2">
+                        <input id="share-link-input" type="text" readonly value="https://trajector.com/suivi/c_9f8a21b" class="flex-1 bg-slate-100 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono text-slate-600 select-all">
+                        <button id="btn-copy-link" class="bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs px-3 py-2 rounded-lg transition-colors flex items-center gap-1">
+                            <span>📋</span> Copier
+                        </button>
+                    </div>
+                    <button id="btn-send-whatsapp" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 rounded-lg shadow-sm flex items-center justify-center gap-1.5 transition-colors">
+                        <span>💬</span> Envoyer le lien de suivi au client via WhatsApp
+                    </button>
+                </div>
+            </div>
+
+            <!-- Active Trip Details on Driver Screen -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5 space-y-3">
+                <div class="flex items-center justify-between">
+                    <h3 class="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-amber-500"></span> Course active #CMD-8421
+                    </h3>
+                    <span class="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">1 500 FCFA</span>
+                </div>
+                <div class="text-xs space-y-1.5 text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                    <div><strong>Expéditeur :</strong> Boutique Chic Yopougon (07 08 09 10)</div>
+                    <div><strong>Destinataire :</strong> M. Konan - Cocody Angré 8e Tranche</div>
+                    <div><strong>Colis :</strong> Robe de soirée + Paire de chaussures</div>
+                    <div><strong>Paiement colis :</strong> 25 000 FCFA à encaisser (COD)</div>
+                </div>
+                <div class="flex gap-2">
+                    <button id="btn-complete-delivery" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 rounded-lg transition-colors">
+                        ✓ Valider livraison effectuée
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- VIEW 2: CLIENT LIVE TRACKING (CUSTOMER EXPERIENCE)             -->
+        <!-- ============================================================== -->
+        <section id="view-client" class="persona-view hidden max-w-4xl mx-auto space-y-4">
+            <!-- Customer Tracking Card Header -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-4 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center text-2xl font-black">
+                        🛵
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h2 class="font-bold text-slate-900 text-base sm:text-lg">Suivi de votre colis en direct</h2>
+                            <span class="bg-emerald-100 text-emerald-800 text-[11px] font-bold px-2 py-0.5 rounded-full animate-pulse">EN APPROCHE</span>
+                        </div>
+                        <p class="text-xs text-slate-500">Votre livreur est en route vers Cocody Angré 8e Tranche</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-4 bg-slate-50 p-2.5 rounded-xl border border-slate-100 w-full sm:w-auto justify-between sm:justify-start">
+                    <div class="text-left">
+                        <div class="text-[10px] text-slate-400 font-semibold uppercase">Arrivée estimée</div>
+                        <div id="client-eta" class="text-base font-black text-slate-900">12 min</div>
+                    </div>
+                    <div class="h-8 w-px bg-slate-200"></div>
+                    <div class="text-left">
+                        <div class="text-[10px] text-slate-400 font-semibold uppercase">Distance restante</div>
+                        <div id="client-distance" class="text-base font-black text-slate-900">4,2 km</div>
+                    </div>
+                    <button id="btn-call-driver" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-2 rounded-lg flex items-center gap-1 shadow-sm transition-colors">
+                        <span>📞</span> Appeler
+                    </button>
+                </div>
+            </div>
+
+            <!-- Interactive Map Container -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-3 h-[420px] relative overflow-hidden">
+                <div id="tracking-map" class="w-full h-full rounded-xl"></div>
+                <!-- Floating Info Badge on Map -->
+                <div class="absolute bottom-6 left-6 z-20 bg-slate-900/90 backdrop-blur-md text-white p-3 rounded-xl shadow-xl border border-slate-700 text-xs flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center font-bold">
+                        🏍️
+                    </div>
+                    <div>
+                        <div class="font-bold">Amadou (Haojue 110)</div>
+                        <div class="text-[11px] text-slate-300">Vitesse : <span id="map-live-speed" class="text-emerald-400 font-bold">38 km/h</span> • Précision GPS : 4m</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Driver & Security Guarantee Box -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div class="bg-white p-4 rounded-xl border border-slate-200/80 flex items-center gap-3">
+                    <span class="text-2xl">🛡️</span>
+                    <div>
+                        <div class="font-bold text-slate-900">Sécurité & Confiance</div>
+                        <div class="text-slate-500">Livreur vérifié par badge d'identité et plaque officielle.</div>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-xl border border-slate-200/80 flex items-center gap-3">
+                    <span class="text-2xl">⚡</span>
+                    <div>
+                        <div class="font-bold text-slate-900">Position 100% en Direct</div>
+                        <div class="text-slate-500">Flux GPS actualisé toutes les 3 secondes sans latence.</div>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-xl border border-slate-200/80 flex items-center gap-3">
+                    <span class="text-2xl">🔒</span>
+                    <div>
+                        <div class="font-bold text-slate-900">Lien Éphémère Privé</div>
+                        <div class="text-slate-500">Ce lien se désactive automatiquement dès réception du colis.</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- VIEW 3: VITRINE MARQUE BLANCHE (SOCIÉTÉ / LIVREUR PRO)        -->
+        <!-- ============================================================== -->
+        <section id="view-storefront" class="persona-view hidden max-w-3xl mx-auto space-y-5">
+            <!-- White-label Storefront Banner & Header -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+                <div class="h-32 bg-gradient-to-r from-emerald-600 via-teal-600 to-slate-900 relative p-4 flex items-end">
+                    <span class="absolute top-3 right-3 bg-white/20 backdrop-blur-sm text-white text-[11px] font-bold px-2.5 py-1 rounded-full border border-white/30">
+                        🔗 Page Web Personnalisée : trajector.com/p/abidjan-express
+                    </span>
+                </div>
+                <div class="p-6 pt-0 relative flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4 -mt-10">
+                    <div class="flex items-end gap-4">
+                        <div class="w-20 h-20 rounded-2xl bg-white p-1 shadow-md border border-slate-100 flex items-center justify-center text-3xl font-black text-emerald-600">
+                            🚀
+                        </div>
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <h1 class="text-xl font-extrabold text-slate-900">Abidjan Express Cargo</h1>
+                                <span class="bg-emerald-50 text-emerald-700 text-xs font-bold px-2 py-0.5 rounded-full border border-emerald-200">Vérifié</span>
+                            </div>
+                            <p class="text-xs text-slate-500">Société de livraison rapide à moto • Flotte active : <strong>6 motos</strong></p>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-2 w-full sm:w-auto">
+                        <button id="btn-storefront-whatsapp" class="flex-1 sm:flex-initial bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-sm flex items-center justify-center gap-1.5 transition-colors">
+                            <span>💬</span> WhatsApp Direct
+                        </button>
+                        <button id="btn-share-storefront" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-2.5 rounded-xl transition-colors">
+                            Partager ma vitrine
+                        </button>
+                    </div>
+                </div>
+
+                <div class="px-6 pb-6 pt-2 border-t border-slate-100 text-xs text-slate-600">
+                    <p class="leading-relaxed">
+                        Partenaire logistique officiel des commerçants et particuliers d'Abidjan. Livraison express de colis, plis confidentiels, courses urgentes et e-commerce avec traçabilité GPS temps réel offerte.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Indicative Pricing Grid by Municipality -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5 space-y-3">
+                <h3 class="font-bold text-sm text-slate-900 flex items-center gap-1.5">
+                    <span>🏷️</span> Grille Tarifaire Indicative
+                </h3>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                    <div class="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                        <div class="font-bold text-slate-700">Même commune</div>
+                        <div class="text-emerald-600 font-extrabold text-sm mt-0.5">1 000 FCFA</div>
+                        <div class="text-[11px] text-slate-400">Ex: Cocody ↔ Cocody</div>
+                    </div>
+                    <div class="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                        <div class="font-bold text-slate-700">Communes voisines</div>
+                        <div class="text-emerald-600 font-extrabold text-sm mt-0.5">1 500 FCFA</div>
+                        <div class="text-[11px] text-slate-400">Ex: Plateau ↔ Cocody</div>
+                    </div>
+                    <div class="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                        <div class="font-bold text-slate-700">Longue distance</div>
+                        <div class="text-emerald-600 font-extrabold text-sm mt-0.5">2 000 - 2 500 FCFA</div>
+                        <div class="text-[11px] text-slate-400">Ex: Yopougon ↔ Koumassi</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Direct Order Form (Assigned exclusively to this company) -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-6 space-y-4">
+                <div class="border-b border-slate-100 pb-3">
+                    <h3 class="font-bold text-base text-slate-900">Commander une course directement chez Abidjan Express</h3>
+                    <p class="text-xs text-slate-500">Cette course sera immédiatement confiée à l'une de nos motos sans intermédiaire.</p>
+                </div>
+
+                <form id="form-direct-order" class="space-y-3 text-xs">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Votre Nom / Boutique</label>
+                            <input id="direct-sender-name" type="text" required placeholder="Ex: Boutique Marie" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Votre Numéro de Téléphone</label>
+                            <input id="direct-sender-phone" type="tel" required placeholder="Ex: 07 00 00 00 00" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Lieu de ramassage (Départ)</label>
+                            <input id="direct-pickup" type="text" required placeholder="Ex: Pharmacie Sainte Famille, Cocody" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Lieu de livraison (Arrivée)</label>
+                            <input id="direct-dropoff" type="text" required placeholder="Ex: Carrefour Siporex, Yopougon" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Description du colis & instructions</label>
+                        <input id="direct-desc" type="text" placeholder="Ex: Carton de chaussures, encaisser 15 000 F au destinataire" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none">
+                    </div>
+
+                    <button type="submit" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm py-3 rounded-xl shadow-md transition-colors flex items-center justify-center gap-2">
+                        <span>🚀</span> Valider la commande chez Abidjan Express (1 500 FCFA)
+                    </button>
+                </form>
+            </div>
+        </section>
+
+        <!-- ============================================================== -->
+        <!-- VIEW 4: MARKETPLACE PUBLIQUE (FIND A DRIVER ANYWHERE)          -->
+        <!-- ============================================================== -->
+        <section id="view-marketplace" class="persona-view hidden max-w-3xl mx-auto space-y-5">
+            <!-- Marketplace Hero Banner -->
+            <div class="bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 text-white p-6 sm:p-8 rounded-2xl shadow-md relative overflow-hidden">
+                <div class="max-w-lg space-y-2 relative z-10">
+                    <span class="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold px-2.5 py-1 rounded-full inline-block">
+                        Place de Marché Abidjan
+                    </span>
+                    <h2 class="text-xl sm:text-2xl font-black tracking-tight">Trouvez un livreur moto disponible dans votre commune</h2>
+                    <p class="text-xs sm:text-sm text-slate-300">
+                        Diffusez votre colis à plus de 150 motocyclistes abonnés et suivez votre acheminement en temps réel pour 0 souci.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Public Order Form -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-6 space-y-4">
+                <h3 class="font-bold text-sm text-slate-900 flex items-center gap-2">
+                    <span>📦</span> Demander une course express
+                </h3>
+
+                <form id="form-marketplace-order" class="space-y-3 text-xs">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Commune de départ (Ramassage)</label>
+                            <select id="market-pickup-commune" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 focus:bg-white outline-none">
+                                <option value="Cocody">Cocody</option>
+                                <option value="Yopougon">Yopougon</option>
+                                <option value="Plateau">Plateau</option>
+                                <option value="Marcory">Marcory</option>
+                                <option value="Koumassi">Koumassi</option>
+                                <option value="Adjamé">Adjamé</option>
+                                <option value="Abobo">Abobo</option>
+                                <option value="Treichville">Treichville</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Commune d'arrivée (Livraison)</label>
+                            <select id="market-dropoff-commune" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 focus:bg-white outline-none">
+                                <option value="Plateau">Plateau</option>
+                                <option value="Cocody">Cocody</option>
+                                <option value="Yopougon">Yopougon</option>
+                                <option value="Marcory">Marcory</option>
+                                <option value="Koumassi">Koumassi</option>
+                                <option value="Adjamé">Adjamé</option>
+                                <option value="Abobo">Abobo</option>
+                                <option value="Treichville">Treichville</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Contact Destinataire</label>
+                            <input id="market-recipient-phone" type="tel" required placeholder="05 00 00 00 00" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 focus:bg-white outline-none">
+                        </div>
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Prix de livraison proposé</label>
+                            <input id="market-fee" type="text" readonly value="1 500 FCFA" class="w-full bg-slate-100 border border-slate-200 rounded-lg p-2.5 font-bold text-slate-800">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Nature du colis</label>
+                        <input id="market-pkg-desc" type="text" required placeholder="Ex: Pochette documents confidentiels, repas chaud, colis fragile" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 focus:bg-white outline-none">
+                    </div>
+
+                    <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm py-3 rounded-xl shadow-md transition-colors flex items-center justify-center gap-2">
+                        <span>🔍</span> Diffuser aux livreurs à proximité (Pass 500 F actifs)
+                    </button>
+                </form>
+            </div>
+
+            <!-- Active Nearby Drivers Simulation -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5 space-y-3">
+                <div class="flex items-center justify-between">
+                    <h3 class="font-bold text-sm text-slate-900">Livreurs vérifiés disponibles en direct</h3>
+                    <span class="text-xs text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full">● 14 motos connectées</span>
+                </div>
+
+                <div class="divide-y divide-slate-100 text-xs">
+                    <div class="py-3 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div class="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-700">🛵</div>
+                            <div>
+                                <div class="font-bold text-slate-900">Amadou Kouassi (Haojue 110)</div>
+                                <div class="text-slate-500">Zone : Yopougon / Attécoubé • Pass à jour</div>
+                            </div>
+                        </div>
+                        <span class="text-slate-600 font-medium bg-slate-100 px-2 py-1 rounded">À 800 m</span>
+                    </div>
+                    <div class="py-3 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div class="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-700">🛵</div>
+                            <div>
+                                <div class="font-bold text-slate-900">Bakary Touré (Boxer 150)</div>
+                                <div class="text-slate-500">Zone : Cocody Riviera • Pass à jour</div>
+                            </div>
+                        </div>
+                        <span class="text-slate-600 font-medium bg-slate-100 px-2 py-1 rounded">À 1,4 km</span>
+                    </div>
+                    <div class="py-3 flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div class="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-700">🛵</div>
+                            <div>
+                                <div class="font-bold text-slate-900">Ibrahim Cissé (TVS Neo)</div>
+                                <div class="text-slate-500">Zone : Plateau / Treichville • Pass à jour</div>
+                            </div>
+                        </div>
+                        <span class="text-slate-600 font-medium bg-slate-100 px-2 py-1 rounded">À 2,1 km</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Payment Modal (Simulation Wave / Mobile Money) -->
+    <div id="payment-modal" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div class="font-bold text-slate-900 text-base">Pass Journalier Moto</div>
+                <button id="btn-close-modal" class="text-slate-400 hover:text-slate-700 font-bold text-xl leading-none">&times;</button>
+            </div>
+
+            <div class="text-center py-2">
+                <span class="text-xs text-slate-400 uppercase font-semibold">Montant de la souscription</span>
+                <div class="text-3xl font-black text-slate-900">500 FCFA</div>
+                <p class="text-xs text-slate-500 mt-1">Valable 24 heures glissantes sur toute la ville</p>
+            </div>
+
+            <!-- Payment Providers -->
+            <div class="space-y-2 text-xs">
+                <button id="pay-wave" class="w-full flex items-center justify-between p-3 rounded-xl border border-sky-200 bg-sky-50/50 hover:bg-sky-50 transition-colors font-bold text-sky-900">
+                    <span class="flex items-center gap-2">🌊 Payer avec Wave</span>
+                    <span class="text-xs text-sky-600">Instantané</span>
+                </button>
+                <button id="pay-orange" class="w-full flex items-center justify-between p-3 rounded-xl border border-orange-200 bg-orange-50/50 hover:bg-orange-50 transition-colors font-bold text-orange-900">
+                    <span class="flex items-center gap-2">🟠 Orange Money</span>
+                    <span class="text-xs text-orange-600">Code #144#</span>
+                </button>
+                <button id="pay-momo" class="w-full flex items-center justify-between p-3 rounded-xl border border-yellow-200 bg-yellow-50/50 hover:bg-yellow-50 transition-colors font-bold text-yellow-900">
+                    <span class="flex items-center gap-2">🟡 MTN MoMo</span>
+                    <span class="text-xs text-yellow-600">*133#</span>
+                </button>
+                <button id="pay-wallet" class="w-full flex items-center justify-between p-3 rounded-xl border border-emerald-200 bg-emerald-50/50 hover:bg-emerald-50 transition-colors font-bold text-emerald-900">
+                    <span class="flex items-center gap-2">👛 Déduire de mon solde (4 500 F)</span>
+                    <span class="text-xs text-emerald-600">-500 F</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- In-App Floating Toast Notification -->
+    <div id="toast" class="fixed bottom-5 right-5 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl border border-slate-700 text-xs flex items-center gap-2 transition-all duration-300 transform translate-y-20 opacity-0 pointer-events-none">
+        <span id="toast-icon">✅</span>
+        <span id="toast-message">Action effectuée</span>
+    </div>
+
+    <!-- Application Core Logic -->
+    <script>
+        // State Management
+        const state = {
+            activeTab: 'driver',
+            subActive: true,
+            walletBalance: 4500,
+            gpsActive: true,
+            speed: 38,
+            eta: 12,
+            distance: 4.2,
+            mapInitialized: false,
+            // Route from Yopougon/Plateau to Cocody
+            routeCoords: [
+                [5.328, -4.019], // Plateau
+                [5.334, -4.012],
+                [5.342, -4.005],
+                [5.351, -3.998],
+                [5.358, -3.991],
+                [5.367, -3.985], // Cocody Angré
+            ],
+            currentStep: 0,
+            map: null,
+            bikeMarker: null
+        };
+
+        // DOM Elements
+        const toast = document.getElementById('toast');
+        const toastMessage = document.getElementById('toast-message');
+        const toastIcon = document.getElementById('toast-icon');
+
+        function showToast(msg, icon = '✅') {
+            toastMessage.textContent = msg;
+            toastIcon.textContent = icon;
+            toast.classList.remove('translate-y-20', 'opacity-0', 'pointer-events-none');
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0', 'pointer-events-none');
+            }, 3200);
+        }
+
+        // Tab Switching Logic
+        const tabs = [
+            { id: 'driver', btn: document.getElementById('tab-btn-driver'), view: document.getElementById('view-driver') },
+            { id: 'client', btn: document.getElementById('tab-btn-client'), view: document.getElementById('view-client') },
+            { id: 'storefront', btn: document.getElementById('tab-btn-storefront'), view: document.getElementById('view-storefront') },
+            { id: 'marketplace', btn: document.getElementById('tab-btn-marketplace'), view: document.getElementById('view-marketplace') }
+        ];
+
+        function switchTab(tabId) {
+            state.activeTab = tabId;
+            tabs.forEach(t => {
+                if (t.id === tabId) {
+                    t.view.classList.remove('hidden');
+                    t.btn.classList.add('bg-emerald-600', 'text-white', 'shadow-sm');
+                    t.btn.classList.remove('text-slate-300', 'hover:bg-slate-700');
+                } else {
+                    t.view.classList.add('hidden');
+                    t.btn.classList.remove('bg-emerald-600', 'text-white', 'shadow-sm');
+                    t.btn.classList.add('text-slate-300', 'hover:bg-slate-700');
+                }
+            });
+
+            // Initialize or invalidate Leaflet map size when client tab opens
+            if (tabId === 'client') {
+                setTimeout(initMapIfNeeded, 100);
+            }
+        }
+
+        tabs.forEach(t => {
+            t.btn.addEventListener('click', () => switchTab(t.id));
+        });
+
+        // Initialize Leaflet Map
+        function initMapIfNeeded() {
+            if (!state.mapInitialized) {
+                state.map = L.map('tracking-map').setView([5.342, -4.005], 13);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap contributors',
+                    maxZoom: 18
+                }).addTo(state.map);
+
+                // Add Polyline route
+                const polyline = L.polyline(state.routeCoords, { color: '#059669', weight: 4, dashArray: '6, 8' }).addTo(state.map);
+
+                // Start Marker (Pickup)
+                L.circleMarker(state.routeCoords[0], { radius: 7, color: '#f59e0b', fillColor: '#fbbf24', fillOpacity: 1 })
+                    .bindPopup('<b>Point de ramassage :</b> Plateau')
+                    .addTo(state.map);
+
+                // Destination Marker
+                L.circleMarker(state.routeCoords[state.routeCoords.length - 1], { radius: 7, color: '#ef4444', fillColor: '#f87171', fillOpacity: 1 })
+                    .bindPopup('<b>Destination :</b> Cocody Angré')
+                    .addTo(state.map);
+
+                // Bike Marker with custom HTML icon
+                const bikeIcon = L.divIcon({
+                    className: 'pulse-marker',
+                    html: '<div style="background-color: #059669; color: white; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; border: 2px solid white; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3);">🛵</div>',
+                    iconSize: [34, 34],
+                    iconAnchor: [17, 17]
+                });
+
+                state.bikeMarker = L.marker(state.routeCoords[state.currentStep], { icon: bikeIcon }).addTo(state.map);
+                state.mapInitialized = true;
+
+                // Animate Bike along coordinates
+                setInterval(animateBikePosition, 2500);
+            } else if (state.map) {
+                state.map.invalidateSize();
+            }
+        }
+
+        function animateBikePosition() {
+            if (!state.map || !state.bikeMarker) return;
+            state.currentStep = (state.currentStep + 1) % state.routeCoords.length;
+            const nextCoord = state.routeCoords[state.currentStep];
+            state.bikeMarker.setLatLng(nextCoord);
+
+            // Fluctuate telemetry slightly for realism
+            state.speed = Math.floor(32 + Math.random() * 12);
+            document.getElementById('telemetry-speed').textContent = state.speed + ' km/h';
+            document.getElementById('map-live-speed').textContent = state.speed + ' km/h';
+
+            if (state.currentStep === state.routeCoords.length - 1) {
+                document.getElementById('client-eta').textContent = '1 min';
+                document.getElementById('client-distance').textContent = '250 m';
+            } else {
+                const remaining = (state.routeCoords.length - 1 - state.currentStep) * 0.9;
+                document.getElementById('client-distance').textContent = remaining.toFixed(1) + ' km';
+                document.getElementById('client-eta').textContent = Math.round(remaining * 3) + ' min';
+            }
+        }
+
+        // Subscription UI handling
+        const subBadge = document.getElementById('sub-badge');
+        const subStatusDesc = document.getElementById('sub-status-desc');
+        const btnToggleSub = document.getElementById('btn-toggle-sub');
+        const btnPaySub = document.getElementById('btn-pay-sub');
+        const subCardBox = document.getElementById('sub-card-box');
+        const shareLinkInput = document.getElementById('share-link-input');
+        const btnSendWhatsapp = document.getElementById('btn-send-whatsapp');
+
+        function updateSubscriptionUI() {
+            if (state.subActive) {
+                subBadge.textContent = 'ACTIF';
+                subBadge.className = 'px-2.5 py-1 text-xs font-bold rounded-full bg-emerald-100 text-emerald-800';
+                subStatusDesc.textContent = "Valide jusqu'à 23h59 (Péage réglé)";
+                subCardBox.className = 'mt-4 p-4 rounded-xl border border-emerald-200 bg-emerald-50/30';
+                btnToggleSub.textContent = 'Simuler expiration';
+                shareLinkInput.disabled = false;
+                btnSendWhatsapp.disabled = false;
+                btnSendWhatsapp.classList.remove('opacity-50', 'cursor-not-allowed');
+            } else {
+                subBadge.textContent = 'EXPIRÉ';
+                subBadge.className = 'px-2.5 py-1 text-xs font-bold rounded-full bg-red-100 text-red-800';
+                subStatusDesc.textContent = 'Paiement requis pour partager votre position';
+                subCardBox.className = 'mt-4 p-4 rounded-xl border border-red-200 bg-red-50/40';
+                btnToggleSub.textContent = 'Pass expiré';
+                shareLinkInput.disabled = true;
+                btnSendWhatsapp.disabled = true;
+                btnSendWhatsapp.classList.add('opacity-50', 'cursor-not-allowed');
+            }
+        }
+
+        btnToggleSub.addEventListener('click', () => {
+            state.subActive = !state.subActive;
+            updateSubscriptionUI();
+            showToast(state.subActive ? 'Pass journalier activé' : 'Pass journalier désactivé (Mode test)', state.subActive ? '⚡' : '⚠️');
+        });
+
+        // Modal Payment Flow
+        const paymentModal = document.getElementById('payment-modal');
+        const btnCloseModal = document.getElementById('btn-close-modal');
+
+        btnPaySub.addEventListener('click', () => {
+            paymentModal.classList.remove('hidden');
+        });
+
+        btnCloseModal.addEventListener('click', () => {
+            paymentModal.classList.add('hidden');
+        });
+
+        function completePayment(methodName) {
+            paymentModal.classList.add('hidden');
+            state.subActive = true;
+            if (methodName === 'Portefeuille' && state.walletBalance >= 500) {
+                state.walletBalance -= 500;
+                document.getElementById('driver-wallet').textContent = state.walletBalance.toLocaleString() + ' F';
+            }
+            updateSubscriptionUI();
+            showToast(`Souscription 500 F validée via ${methodName} !`, '🎉');
+        }
+
+        document.getElementById('pay-wave').addEventListener('click', () => completePayment('Wave'));
+        document.getElementById('pay-orange').addEventListener('click', () => completePayment('Orange Money'));
+        document.getElementById('pay-momo').addEventListener('click', () => completePayment('MTN MoMo'));
+        document.getElementById('pay-wallet').addEventListener('click', () => completePayment('Portefeuille'));
+
+        // GPS Toggle Button
+        const btnToggleGps = document.getElementById('btn-toggle-gps');
+        const gpsPulseIndicator = document.getElementById('gps-pulse-indicator');
+
+        btnToggleGps.addEventListener('click', () => {
+            state.gpsActive = !state.gpsActive;
+            if (state.gpsActive) {
+                btnToggleGps.textContent = 'EN LIGNE';
+                btnToggleGps.className = 'text-xs font-bold px-3 py-1 rounded-full bg-emerald-500 text-slate-950';
+                gpsPulseIndicator.className = 'w-3 h-3 rounded-full bg-emerald-500 animate-ping';
+                showToast('Émission GPS en arrière-plan activée', '📡');
+            } else {
+                btnToggleGps.textContent = 'HORS LIGNE';
+                btnToggleGps.className = 'text-xs font-bold px-3 py-1 rounded-full bg-slate-700 text-slate-300';
+                gpsPulseIndicator.className = 'w-3 h-3 rounded-full bg-slate-600';
+                showToast('Émission GPS coupée', '⏸️');
+            }
+        });
+
+        // Copy Link Action
+        document.getElementById('btn-copy-link').addEventListener('click', () => {
+            const input = document.getElementById('share-link-input');
+            input.select();
+            try {
+                navigator.clipboard.writeText(input.value);
+            } catch (e) {
+                document.execCommand('copy');
+            }
+            showToast('Lien de suivi copié dans le presse-papier !', '📋');
+        });
+
+        // WhatsApp Share Action
+        btnSendWhatsapp.addEventListener('click', () => {
+            if (!state.subActive) {
+                showToast('Veuillez activer votre pass de 500 F pour partager votre position', '⚠️');
+                return;
+            }
+            showToast('Lien transmis au client par WhatsApp !', '💬');
+            // Switch to client tab to demonstrate what client sees
+            setTimeout(() => switchTab('client'), 1200);
+        });
+
+        // Complete Delivery Action
+        document.getElementById('btn-complete-delivery').addEventListener('click', () => {
+            showToast('Course #CMD-8421 clôturée ! Partage GPS désactivé.', '🏁');
+        });
+
+        // Direct Storefront Order Form
+        document.getElementById('form-direct-order').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const sender = document.getElementById('direct-sender-name').value;
+            showToast(`Commande reçue pour ${sender} ! Transmise aux motos d'Abidjan Express.`, '🚀');
+            e.target.reset();
+        });
+
+        // Storefront WhatsApp Direct
+        document.getElementById('btn-storefront-whatsapp').addEventListener('click', () => {
+            showToast('Redirection vers le numéro WhatsApp commercial d’Abidjan Express...', '💬');
+        });
+
+        // Share Storefront Link
+        document.getElementById('btn-share-storefront').addEventListener('click', () => {
+            try {
+                navigator.clipboard.writeText('https://trajector.com/p/abidjan-express');
+            } catch (e) {
+                document.execCommand('copy');
+            }
+            showToast('Lien vitrine pro copié : trajector.com/p/abidjan-express', '🔗');
+        });
+
+        // Public Marketplace Order Form
+        document.getElementById('form-marketplace-order').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const pickup = document.getElementById('market-pickup-commune').value;
+            const dropoff = document.getElementById('market-dropoff-commune').value;
+            showToast(`Course diffusée aux 14 motos disponibles entre ${pickup} et ${dropoff} !`, '🔔');
+            e.target.reset();
+        });
+
+        // Call Driver Simulator
+        document.getElementById('btn-call-driver').addEventListener('click', () => {
+            showToast('Appel du coursier Amadou au 07 00 00 00 00...', '📞');
+        });
+
+        // Initial Setup
+        updateSubscriptionUI();
+    </script>
+</body>
+</html>
