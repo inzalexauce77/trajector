@@ -1,38 +1,404 @@
 name: Build Android APK
 
 on:
-  workflow_dispatch: # Permet de lancer la compilation en 1 clic
+  push:
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build:
+    name: Build Trajector Driver APK
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Setup Java
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+        uses: actions/subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.x'
           channel: 'stable'
+          cache: true
 
-      - name: Get Dependencies
+      - name: Create and configure Flutter Driver App
         run: |
-          cd flutter_driver_app
+          if [ ! -d "driver_app" ]; then
+            flutter create --org com.trajector --project-name trajector_driver driver_app
+          fi
+          cd driver_app
+
+          cat << 'EOF' > pubspec.yaml
+          name: trajector_driver
+          description: Application Chauffeur Trajector Abidjan
+          publish_to: 'none'
+          version: 1.0.0+1
+
+          environment:
+            sdk: '>=3.0.0 <4.0.0'
+
+          dependencies:
+            flutter:
+              sdk: flutter
+            http: ^1.2.0
+            geolocator: ^12.0.0
+            shared_preferences: ^2.2.3
+            cupertino_icons: ^1.0.6
+
+          dev_dependencies:
+            flutter_test:
+              sdk: flutter
+            flutter_lints: ^3.0.0
+
+          flutter:
+            uses-material-design: true
+          EOF
+
+          cat << 'EOF' > android/app/src/main/AndroidManifest.xml
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET"/>
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+              <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+              <uses-permission android:name="android.permission.WAKE_LOCK"/>
+
+              <application
+                  android:label="Trajector Chauffeur"
+                  android:name="${applicationName}"
+                  android:icon="@mipmap/ic_launcher">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:launchMode="singleTop"
+                      android:taskAffinity=""
+                      android:theme="@style/LaunchTheme"
+                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+                      android:hardwareAccelerated="true"
+                      android:windowSoftInputMode="adjustResize">
+                      <meta-data
+                        android:name="io.flutter.embedding.android.NormalTheme"
+                        android:resource="@style/NormalTheme"
+                        />
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+                  <meta-data
+                      android:name="flutterEmbedding"
+                      android:value="2" />
+              </application>
+          </manifest>
+          EOF
+
+          cat << 'EOF' > lib/main.dart
+          import 'dart:async';
+          import 'dart:convert';
+          import 'package:flutter/material.dart';
+          import 'package:geolocator/geolocator.dart';
+          import 'package:http/http.dart' as http;
+          import 'package:shared_preferences/shared_preferences.dart';
+
+          void main() {
+            runApp(const TrajectorDriverApp());
+          }
+
+          class TrajectorDriverApp extends StatelessWidget {
+            const TrajectorDriverApp({super.key});
+
+            @override
+            Widget build(BuildContext context) {
+              return MaterialApp(
+                title: 'Trajector Chauffeur',
+                debugShowCheckedModeBanner: false,
+                theme: ThemeData(
+                  primaryColor: const Color(0xFFFF6600),
+                  colorScheme: ColorScheme.fromSeed(
+                    seedColor: const Color(0xFFFF6600),
+                    primary: const Color(0xFFFF6600),
+                  ),
+                  useMaterial3: true,
+                ),
+                home: const DriverHomePage(),
+              );
+            }
+          }
+
+          class DriverHomePage extends StatefulWidget {
+            const DriverHomePage({super.key});
+
+            @override
+            State<DriverHomePage> createState() => _DriverHomePageState();
+          }
+
+          class _DriverHomePageState extends State<DriverHomePage> {
+            bool _isOnline = false;
+            String _statusText = 'Hors ligne - GPS inactif';
+            String _driverId = 'DRV-ABJ-001';
+            String _driverName = 'Kouamé Jean';
+            String _zone = 'Cocody / Plateau';
+            StreamSubscription<Position>? _positionStream;
+            int _pointsSent = 0;
+
+            @override
+            void initState() {
+              super.initState();
+              _loadDriverData();
+            }
+
+            Future<void> _loadDriverData() async {
+              final prefs = await SharedPreferences.getInstance();
+              setState(() {
+                _driverId = prefs.getString('driver_id') ?? 'DRV-ABJ-001';
+                _driverName = prefs.getString('driver_name') ?? 'Chauffeur Trajector';
+              });
+            }
+
+            Future<void> _toggleOnline(bool value) async {
+              if (value) {
+                bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+                if (!serviceEnabled) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Veuillez activer le GPS du téléphone')),
+                    );
+                  }
+                  return;
+                }
+
+                LocationPermission permission = await Geolocator.checkPermission();
+                if (permission == LocationPermission.denied) {
+                  permission = await Geolocator.requestPermission();
+                  if (permission == LocationPermission.denied) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Permission GPS refusée')),
+                      );
+                    }
+                    return;
+                  }
+                }
+
+                if (permission == LocationPermission.deniedForever) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Activez la localisation dans les réglages')),
+                    );
+                  }
+                  return;
+                }
+
+                setState(() {
+                  _isOnline = true;
+                  _statusText = 'En service - Transmission GPS active (Abidjan)';
+                });
+
+                const locationSettings = LocationSettings(
+                  accuracy: LocationAccuracy.high,
+                  distanceFilter: 5,
+                );
+
+                _positionStream = Geolocator.getPositionStream(
+                  locationSettings: locationSettings,
+                ).listen((Position position) {
+                  _sendLocation(position.latitude, position.longitude, position.speed);
+                });
+              } else {
+                await _positionStream?.cancel();
+                _positionStream = null;
+                setState(() {
+                  _isOnline = false;
+                  _statusText = 'Hors ligne - GPS inactif';
+                });
+              }
+            }
+
+            Future<void> _sendLocation(double lat, double lng, double speed) async {
+              setState(() {
+                _pointsSent++;
+              });
+              try {
+                await http.post(
+                  Uri.parse('https://www.trajector.online/api/locations'),
+                  headers: {'Content-Type': 'application/json'},
+                  body: jsonEncode({
+                    'driverId': _driverId,
+                    'lat': lat,
+                    'lng': lng,
+                    'speed': speed * 3.6,
+                    'timestamp': DateTime.now().toIso8601String(),
+                  }),
+                ).timeout(const Duration(seconds: 4));
+              } catch (_) {}
+            }
+
+            @override
+            void dispose() {
+              _positionStream?.cancel();
+              super.dispose();
+            }
+
+            @override
+            Widget build(BuildContext context) {
+              return Scaffold(
+                backgroundColor: const Color(0xFFF8F9FA),
+                appBar: AppBar(
+                  backgroundColor: const Color(0xFFFF6600),
+                  title: const Text(
+                    'TRAJECTOR CHAUFFEUR',
+                    style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 18),
+                  ),
+                  centerTitle: true,
+                  elevation: 0,
+                ),
+                body: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Card(
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        elevation: 3,
+                        child: Padding(
+                          padding: const EdgeInsets.all(20.0),
+                          child: Column(
+                            children: [
+                              Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 30,
+                                    backgroundColor: const Color(0xFFFF6600).withOpacity(0.15),
+                                    child: const Icon(Icons.two_wheeler, size: 36, color: Color(0xFFFF6600)),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          _driverName,
+                                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                                        ),
+                                        Text(
+                                          'ID: $_driverId • Zone: $_zone',
+                                          style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const Divider(height: 30),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: _isOnline ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          _isOnline ? Icons.wifi_tethering : Icons.portable_wifi_off,
+                                          color: _isOnline ? Colors.green : Colors.orange,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Text(
+                                          _isOnline ? 'EN LIGNE' : 'HORS LIGNE',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: _isOnline ? Colors.green[800] : Colors.orange[800],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    Switch(
+                                      value: _isOnline,
+                                      activeColor: const Color(0xFFFF6600),
+                                      onChanged: _toggleOnline,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                _statusText,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                              ),
+                              if (_isOnline) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Points GPS transmis : $_pointsSent',
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Card(
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        elevation: 2,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Abonnement Trajector',
+                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: const [
+                                  Text('Statut journalier:'),
+                                  Chip(
+                                    label: Text('ACTIF (500 FCFA/jour)', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Valide jusqu\'à 23h59 via Wave / Orange Money / MoMo',
+                                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+          }
+          EOF
+
+      - name: Install dependencies
+        run: |
+          cd driver_app
           flutter pub get
 
-      - name: Build APK
+      - name: Build Android APK
         run: |
-          cd flutter_driver_app
-          flutter build apk --release
+          cd driver_app
+          flutter build apk --release --split-per-abi=false
 
-      - name: Upload APK Artifact
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: trajector-driver-app
-          path: flutter_driver_app/build/app/outputs/flutter-apk/app-release.apk
+          name: trajector-driver-apk
+          path: driver_app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
