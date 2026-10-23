@@ -25,40 +25,16 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Create and configure Flutter Driver App
+      - name: Create Flutter Driver Project
         run: |
-          if [ ! -d "driver_app" ]; then
-            flutter create --org com.trajector --project-name trajector_driver driver_app
-          fi
+          rm -rf driver_app
+          flutter create --org com.trajector --project-name trajector_driver driver_app
           cd driver_app
+          flutter pub add geolocator http shared_preferences cupertino_icons
 
-          cat << 'EOF' > pubspec.yaml
-          name: trajector_driver
-          description: Application Chauffeur Trajector Abidjan
-          publish_to: 'none'
-          version: 1.0.0+1
-
-          environment:
-            sdk: '>=3.0.0 <4.0.0'
-
-          dependencies:
-            flutter:
-              sdk: flutter
-            http: ^1.2.0
-            geolocator: ^12.0.0
-            shared_preferences: ^2.2.3
-            cupertino_icons: ^1.0.6
-
-          dev_dependencies:
-            flutter_test:
-              sdk: flutter
-            flutter_lints: ^3.0.0
-
-          flutter:
-            uses-material-design: true
-          EOF
-
-          cat << 'EOF' > android/app/src/main/AndroidManifest.xml
+      - name: Inject Android Background Location Permissions
+        run: |
+          cat << 'EOF' > driver_app/android/app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.INTERNET"/>
               <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
@@ -97,7 +73,9 @@ jobs:
           </manifest>
           EOF
 
-          cat << 'EOF' > lib/main.dart
+      - name: Inject Trajector Driver UI
+        run: |
+          cat << 'EOF' > driver_app/lib/main.dart
           import 'dart:async';
           import 'dart:convert';
           import 'package:flutter/material.dart';
@@ -385,11 +363,6 @@ jobs:
             }
           }
           EOF
-
-      - name: Install dependencies
-        run: |
-          cd driver_app
-          flutter pub get
 
       - name: Build Android APK
         run: |
